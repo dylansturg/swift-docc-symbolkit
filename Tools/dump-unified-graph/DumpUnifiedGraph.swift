@@ -67,8 +67,11 @@ struct DumpUnifiedGraph: ParsableCommand {
 
     func run() throws {
         var symbolGraphs = files
+        var moduleOverlayPaths: [String] = []
         if let symbolGraphDir = symbolGraphDir {
-            symbolGraphs.append(contentsOf: loadSymbolGraphsFromDir(symbolGraphDir))
+            let (graphs, overlays) = loadSymbolGraphsFromDir(symbolGraphDir)
+            symbolGraphs.append(contentsOf: graphs)
+            moduleOverlayPaths.append(contentsOf: overlays)
         }
 
         if symbolGraphs.isEmpty {
@@ -76,8 +79,13 @@ struct DumpUnifiedGraph: ParsableCommand {
             throw ExitCode.failure
         }
 
+        let moduleNameOverlays: [String: String] =
+            moduleOverlayPaths.isEmpty
+            ? [:]
+            : try GraphCollector.loadModuleNameOverlays(
+                moduleOverlayPaths.map(URL.init(fileURLWithPath:))) 
         let decoder = JSONDecoder()
-        let collector = GraphCollector()
+        let collector = GraphCollector(moduleNameOverlay: moduleNameOverlays)
 
         for symbolGraph in symbolGraphs {
             let graphUrl = URL(fileURLWithPath: symbolGraph)
@@ -123,15 +131,18 @@ struct DumpUnifiedGraph: ParsableCommand {
     }
 }
 
-func loadSymbolGraphsFromDir(_ dir: String) -> [String] {
+func loadSymbolGraphsFromDir(_ dir: String) -> (graphs: [String], overlays: [String]) {
     let enumerator = FileManager.default.enumerator(atPath: dir)
     var symbolGraphs: [String] = []
+    var overlays: [String] = []
 
     while let filename = enumerator?.nextObject() as? String {
         if filename.hasSuffix(".symbols.json") {
             symbolGraphs.append(dir.appending(filename))
+        } else if filename.hasSuffix("symbol_modules.json") {
+            overlays.append(dir.appending(filename))
         }
     }
 
-    return symbolGraphs
+    return (graphs: symbolGraphs, overlays: [])
 }
